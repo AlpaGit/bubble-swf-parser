@@ -122,7 +122,7 @@ pub fn read_swf_file(reader: *LittleEndianReader) !void {
 
     logger.debug(@src(), "Decompressed {s}{d} bytes", .{ logger.Yellow, n_read });
     logger.debug(@src(), "Reading SWF tags of decompressed_stream[0]: {s}{d}", .{ logger.Yellow, decompressed_stream[0] });
-    const stage_size = reader_decompressed.read_rectangle();
+    const stage_size = try reader_decompressed.read_rectangle();
     logger.debug(@src(), "Rectangle: {s}{}", .{ logger.Yellow, stage_size });
 
     const frame_rate = try reader_decompressed.read_fixed8();
