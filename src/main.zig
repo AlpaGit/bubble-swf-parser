@@ -3,23 +3,11 @@ const LittleEndianReader = @import("io.zig").LittleEndianReader;
 const logger = @import("logger.zig");
 const BitReader = std.io.BitReader;
 
-
 const Compression = enum(u8) {
     UNCOMPRESSED = 'F',
     ZLIB = 'C',
     LZMA = 'Z',
 };
-
-const FixedBufferStreamReader = std.io.Reader(
-    *std.io.FixedBufferStream([]u8),
-    std.io.FixedBufferStream([]u8).ReadError,
-    std.io.FixedBufferStream([]u8).read,
-);
-
-const MemoryBitReader = std.io.BitReader(
-    std.builtin.Endian.big,
-    FixedBufferStreamReader,
-);
 
 pub fn main() !void {
     //var argsIterator = try std.process.ArgIterator.initWithAllocator(allocator);

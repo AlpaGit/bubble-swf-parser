@@ -3,6 +3,19 @@ const mem = std.mem;
 const Endian = std.builtin.Endian;
 const testing = std.testing;
 
+
+// const FixedBufferStreamReader = std.io.Reader(
+//     *std.io.FixedBufferStream([]u8),
+//     std.io.FixedBufferStream([]u8).ReadError,
+//     std.io.FixedBufferStream([]u8).read,
+// );
+
+// const MemoryBitReader = std.io.BitReader(
+//    std.builtin.Endian.big,
+//    FixedBufferStreamReader,
+    );
+
+
 pub const Error = error{
     EOF,
 };
