@@ -1,7 +1,6 @@
 const std = @import("std");
 const io = @import("io.zig");
 const logger = @import("logger.zig");
-const test_io = @import("test.io.zig");
 
 const Rectangle = io.Rectangle;
 const LittleEndianReader = io.LittleEndianReader;
@@ -21,9 +20,6 @@ const SwfHeader = struct {
 };
 
 pub fn main() !void {
-    var ls = [_]u8 {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    var bn = test_io.BinaryReader.init(&ls);
-    try bn.skip(2);
     //var argsIterator = try std.process.ArgIterator.initWithAllocator(allocator);
     //defer argsIterator.deinit();
 
