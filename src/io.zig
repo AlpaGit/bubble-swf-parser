@@ -2,7 +2,12 @@ const std = @import("std");
 const mem = std.mem;
 const Endian = std.builtin.Endian;
 const testing = std.testing;
+const tags = @import("tags.zig");
 
+const TagCode = tags.TagCode;
+const Tag = tags.Tag;
+
+// const BitReader = std.io.BitReader;
 // const FixedBufferStreamReader = std.io.Reader(
 //     *std.io.FixedBufferStream([]u8),
 //     std.io.FixedBufferStream([]u8).ReadError,
@@ -19,11 +24,16 @@ pub const Error = error{
     EOF,
 };
 
-const Rectangle = struct {
+pub const Rectangle = struct {
     x_min: Twips,
     x_max: Twips,
     y_min: Twips,
     y_max: Twips,
+};
+
+const TagMetadata = struct {
+    code: TagCode,
+    length: u32,
 };
 
 pub const TWIPS_PER_PIXEL: i32 = 20;
@@ -57,15 +67,19 @@ pub const LittleEndianReader = struct {
         return self.bit_buffer;
     }
 
-    pub fn read_utf8(self: *LittleEndianReader, size: usize) []u8 {
+    pub fn read_utf8(self: *LittleEndianReader, size: u64) Error![]u8 {
+        if (self.position + size > self.buffer.len) {
+            return Error.EOF;
+        }
+
         const result = self.buffer[self.position .. self.position + size];
         self.position += size;
 
         return result;
     }
 
-    pub fn read_bytes(self: *LittleEndianReader, size: usize) [size]u8 {
-        return self.read_utf8(size);
+    pub fn read_bytes(self: *LittleEndianReader, size: u64) Error![]u8 {
+        return try self.read_utf8(size);
     }
 
     pub fn read_all(
@@ -79,6 +93,7 @@ pub const LittleEndianReader = struct {
 
     pub fn read_n(self: *LittleEndianReader, size: comptime_int) Error!*[size]u8 {
         if (self.position + size > self.buffer.len) {
+            std.log.debug("Buffer is too small to read {d} bytes ({d}/{d})", .{size, self.position, self.buffer.len});
             return Error.EOF;
         }
 
@@ -88,7 +103,11 @@ pub const LittleEndianReader = struct {
         return result;
     }
 
-    pub fn read_u8(self: *LittleEndianReader) u8 {
+    pub fn read_u8(self: *LittleEndianReader) Error!u8 {
+        if (self.position >= self.buffer.len) {
+            return Error.EOF;
+        }
+
         const result = self.buffer[self.position];
         self.position += 1;
         return result;
@@ -106,20 +125,26 @@ pub const LittleEndianReader = struct {
         return std.mem.readInt(u32, try self.read_n(4), Endian.little);
     }
 
-    pub fn read_rectangle(self: *LittleEndianReader) !Rectangle {
+    pub fn read_f32(self: *LittleEndianReader) Error!f32 {
+        const value = std.mem.readInt(i32, try self.read_n(4), Endian.little);
+
+        return @bitCast(value);
+    }
+
+    pub fn read_rectangle(self: *LittleEndianReader) Error!Rectangle {
         const num_bits:u5 = @intCast(try self.read_ubits(5));
 
         const rect = Rectangle{
-            .x_min = Twips { .value = self.read_sbits(num_bits) },
-            .x_max = Twips { .value = self.read_sbits(num_bits) },
-            .y_min = Twips { .value = self.read_sbits(num_bits) },
-            .y_max = Twips { .value = self.read_sbits(num_bits) },
+            .x_min = Twips { .value = try self.read_sbits(num_bits) },
+            .x_max = Twips { .value = try self.read_sbits(num_bits) },
+            .y_min = Twips { .value = try self.read_sbits(num_bits) },
+            .y_max = Twips { .value = try self.read_sbits(num_bits) },
         };
 
         return rect;
     }
 
-    pub fn read_ubits(self: *LittleEndianReader, n_bits: u8) !u32 {
+    pub fn read_ubits(self: *LittleEndianReader, n_bits: u8) Error!u32 {
         var val: u32 = 0;
 
         for(n_bits) |_| {
@@ -148,7 +173,7 @@ pub const LittleEndianReader = struct {
     }
 
 
-    pub fn read_sbits(self: *LittleEndianReader, num_bits: u5) i32 {
+    pub fn read_sbits(self: *LittleEndianReader, num_bits: u5) Error!i32 {
         if (num_bits == 0) {
             return 0;
         }
@@ -170,12 +195,52 @@ pub const LittleEndianReader = struct {
     }
 
 
-    pub fn read_fixed8(self: *LittleEndianReader) !f32 {
+    pub fn read_fixed8(self: *LittleEndianReader) Error!f32 {
         const val:f32 = @floatFromInt(try self.read_i16());
         return val / 256.0;
     }
 
-    pub fn ignore(self: *LittleEndianReader, size: usize) void {
+
+    pub fn read_tag(self: *LittleEndianReader) Error!Tag{
+        const tag_metadata = try self.read_tag_code_and_length();
+
+        return try self.read_tag_with_code(tag_metadata.code, tag_metadata.length);
+    }
+
+
+    pub fn read_tag_with_code(self: *LittleEndianReader, tag_code:TagCode, length:u32) Error!Tag {
+        const buffer = try self.read_bytes(length);
+        var reader = LittleEndianReader.init(buffer);
+
+        defer {
+            if(reader.position != length) {
+                std.log.err("Tag {d} was not fully read", .{tag_code});
+            }
+        }
+
+        return try Tag.read(tag_code, &reader);
+    }
+
+    pub fn read_tag_code_and_length(self: *LittleEndianReader) Error!TagMetadata {
+        const tag_code_and_length = try self.read_u16();
+        const tag_code = tag_code_and_length >> 6;
+        var tag_length:u32 = tag_code_and_length & 0b111111;
+
+        if (tag_length == 0b111111) {
+            // Extended tag.
+            tag_length = try self.read_u32();
+        }
+
+        return TagMetadata{
+            .code = TagCode.from_u16(tag_code),
+            .length = tag_length,
+        };
+    }
+
+    pub fn ignore(self: *LittleEndianReader, size: usize) Error!void {
+        if (self.position + size > self.buffer.len) {
+            return Error.EOF;
+        }
         self.position += size;
     }
 

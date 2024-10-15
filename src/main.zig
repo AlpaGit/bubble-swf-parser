@@ -1,7 +1,10 @@
 const std = @import("std");
-const LittleEndianReader = @import("io.zig").LittleEndianReader;
+const io = @import("io.zig");
 const logger = @import("logger.zig");
-const BitReader = std.io.BitReader;
+const test_io = @import("test.io.zig");
+
+const Rectangle = io.Rectangle;
+const LittleEndianReader = io.LittleEndianReader;
 
 const Compression = enum(u8) {
     UNCOMPRESSED = 'F',
@@ -9,7 +12,18 @@ const Compression = enum(u8) {
     LZMA = 'Z',
 };
 
+const SwfHeader = struct {
+    compression: Compression,
+    version: u8,
+    stage_size: Rectangle,
+    frame_rate: f32,
+    num_frames: i16,
+};
+
 pub fn main() !void {
+    var ls = [_]u8 {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    var bn = test_io.BinaryReader.init(&ls);
+    try bn.skip(2);
     //var argsIterator = try std.process.ArgIterator.initWithAllocator(allocator);
     //defer argsIterator.deinit();
 
@@ -55,7 +69,7 @@ pub fn read_swf_file(reader: *LittleEndianReader) !void {
         return error.InsufficientData;
     }
 
-    const compression: Compression = @enumFromInt(reader.read_u8());
+    const compression: Compression = @enumFromInt(try reader.read_u8());
     // always 'WS' for SWF files
     _ = try reader.read_u16();
     const version = try read_version(reader);
@@ -105,32 +119,60 @@ pub fn read_swf_file(reader: *LittleEndianReader) !void {
         return error.DecompressionError;
     }
 
-    // We make a stream of the decompressed data
-    var reader_decompressed = LittleEndianReader.init(decompressed_stream);
-
-    logger.debug(@src(), "Decompressed {s}{d} bytes", .{ logger.Yellow, n_read });
-    logger.debug(@src(), "Reading SWF tags of decompressed_stream[0]: {s}{d}", .{ logger.Yellow, decompressed_stream[0] });
-    const stage_size = try reader_decompressed.read_rectangle();
-    logger.debug(@src(), "Rectangle: {s}{}", .{ logger.Yellow, stage_size });
-
-    const frame_rate = try reader_decompressed.read_fixed8();
-
-    logger.debug(@src(), "Frame rate: {s}{d}", .{ logger.Yellow, frame_rate });
+    try read_swf_uncompressed(compression, version, decompressed_stream);
 }
 
+
+pub fn read_swf_uncompressed(compression: Compression, version: u8, decompressed_stream:[]u8) !void {
+    // We make a stream of the decompressed data
+    var reader = LittleEndianReader.init(decompressed_stream);
+
+    logger.debug(@src(), "Decompressed {s}{d} bytes", .{ logger.Yellow, reader.buffer.len });
+    logger.debug(@src(), "Reading SWF tags of decompressed_stream[0]: {s}{d}", .{ logger.Yellow, decompressed_stream[0] });
+
+    const stage_size = try reader.read_rectangle();
+    const frame_rate = try reader.read_fixed8();
+    const num_frames = try reader.read_i16();
+
+
+    logger.debug(@src(), "Rectangle: {s}{}", .{ logger.Yellow, stage_size });
+    logger.debug(@src(), "Frame rate: {s}{d}", .{ logger.Yellow, frame_rate });
+    logger.debug(@src(), "Number of frames: {s}{d}", .{ logger.Yellow, num_frames });
+
+    const header = SwfHeader{
+        .compression = compression,
+        .version = version,
+        .stage_size = stage_size,
+        .frame_rate = frame_rate,
+        .num_frames = num_frames,
+    };
+
+    logger.debug(@src(), "SWF Header: {}", .{ header });
+
+    const tag = try reader.read_tag();
+
+    logger.debug(@src(), "Tag: {}", .{ tag });
+}
+
+
 pub fn read_version(reader: *LittleEndianReader) !u8 {
-    const version = reader.read_u8();
+    const version = try reader.read_u8();
     logger.debug(@src(), "SWF version: {s}{d}", .{ logger.Yellow, version });
 
     return version;
 }
 
 pub fn read_uncompressed_length(reader: *LittleEndianReader) !u32 {
-    const length = reader.read_u32();
+    const length = try reader.read_u32();
     logger.debug(@src(), "Uncompressed File length: {s}{d}", .{ logger.Yellow, length });
 
     return length;
 }
+
+
+
+
+
 
 
 
