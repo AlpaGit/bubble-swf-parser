@@ -1623,12 +1623,12 @@ pub const DefineShape = struct {
 
 pub const DefineSprite = struct {
     id: u16,
-    frame_count: u16,
+    frame_count: i16,
     tags: []Tag,
 
     pub fn read(reader: *LittleEndianReader, allocator: std.mem.Allocator) anyerror!DefineSprite {
         const id = try reader.read_u16();
-        const frame_count = try reader.read_u16();
+        const frame_count = try reader.read_i16();
         var control_tags:ArrayList(Tag) = ArrayList(Tag).init(allocator);
 
         while(true and !reader.eof()){
@@ -1645,7 +1645,7 @@ pub const DefineSprite = struct {
 };
 
 
-pub const PlaceObjectAction = union {
+pub const PlaceObjectAction = union(enum) {
     Place: u16,
     Modify: bool,
     Replace: u16,
@@ -2129,6 +2129,53 @@ pub const SymbolClass = struct {
     }
 };
 
+pub const ExportedAsset = struct {
+    id: u16,
+    name: []u8,
+
+    pub fn read(reader: *LittleEndianReader) !ExportedAsset {
+        const id = try reader.read_u16();
+        const name = try reader.read_str();
+        return ExportedAsset {
+            .id = id,
+            .name = name,
+        };
+    }
+};
+
+pub const ExportAssets = struct {
+    assets: []ExportedAsset,
+
+    pub fn read(reader: *LittleEndianReader, allocator: std.mem.Allocator) !ExportAssets {
+        const num_assets = try reader.read_u16();
+        var assets = try ArrayList(ExportedAsset).initCapacity(allocator, num_assets);
+
+        for(0..num_assets) |_| {
+            const asset = try ExportedAsset.read(reader);
+            try assets.append(asset);
+        }
+
+        return ExportAssets {
+            .assets = assets.items,
+        };
+    }
+};
+
+pub const FrameLabel = struct {
+    label: []u8,
+    is_anchor: bool,
+
+    pub fn read(reader: *LittleEndianReader, swf_version: u8) !FrameLabel {
+        const label = try reader.read_str();
+        const is_anchor = swf_version >= 6 and try reader.read_u8() != 0;
+
+        return FrameLabel {
+            .label = label,
+            .is_anchor = is_anchor,
+        };
+    }
+};
+
 pub const Tag = union(TagCode){
     End: struct{},
     ShowFrame: struct{},
@@ -2171,14 +2218,14 @@ pub const Tag = union(TagCode){
     NameCharacter: struct{},
     ProductInfo: struct{},
 
-    FrameLabel: struct{},
+    FrameLabel: FrameLabel,
 
     SoundStreamHead2: struct{},
     DefineMorphShape: struct{},
 
     DefineFont2: struct{},
 
-    ExportAssets: struct{},
+    ExportAssets: ExportAssets,
     ImportAssets: struct{},
     EnableDebugger: struct{},
     DoInitAction: struct{},
@@ -2283,6 +2330,12 @@ pub const Tag = union(TagCode){
             },
             TagCode.SymbolClass => return Tag {
                 .SymbolClass = try SymbolClass.read(reader, allocator)
+            },
+            TagCode.ExportAssets => return Tag {
+                .ExportAssets = try ExportAssets.read(reader, allocator)
+            },
+            TagCode.FrameLabel => return Tag {
+                .FrameLabel = try FrameLabel.read(reader, swf_version)
             },
             TagCode.End => return Tag.End,
             TagCode.ShowFrame => return Tag.ShowFrame,

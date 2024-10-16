@@ -216,7 +216,7 @@ pub fn read_swf_uncompressed(compression: Compression, version: u8, decompressed
         .tags = tags_list.items,
     };
 
-    var renderer = Renderer.init(&swf_file);
+    var renderer = Renderer.init(&swf_file, allocator);
     try renderer.render();
 }
 
