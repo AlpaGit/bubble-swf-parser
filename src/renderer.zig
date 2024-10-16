@@ -27,6 +27,7 @@ pub const Renderer = struct {
                 self.screen_width,
                 self.screen_height,
             });
+        rl.setTraceLogLevel(.log_error);
 
         rl.initWindow(self.screen_width, self.screen_height, "Rendering SWF");
         defer rl.closeWindow(); // Close window and OpenGL context
@@ -34,13 +35,16 @@ pub const Renderer = struct {
 
         _ = self.swf_file;
         logger.info(@src(), "Rendering SWF file", .{});
-        //const raylib_zig = rl.Color.init(0, 0, 0, 255);
+        const background_color = rl.Color.init(self.swf_file.background_color.r,
+            self.swf_file.background_color.g,
+            self.swf_file.background_color.b,
+            self.swf_file.background_color.a);
 
         while (!rl.windowShouldClose()) {
             rl.beginDrawing();
             defer rl.endDrawing();
 
-            rl.clearBackground(rl.Color.ray_white);
+            rl.clearBackground(background_color);
             rl.drawFPS(10, 10);
 
 
