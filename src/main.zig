@@ -2,6 +2,8 @@ const std = @import("std");
 const io = @import("io.zig");
 const logger = @import("logger.zig");
 const ArrayList = std.ArrayList;
+const Renderer = @import("renderer.zig").Renderer;
+const tags = @import("tags.zig");
 
 pub const Rectangle = io.Rectangle;
 const LittleEndianReader = io.LittleEndianReader;
@@ -18,6 +20,13 @@ const SwfHeader = struct {
     stage_size: Rectangle,
     frame_rate: f32,
     num_frames: i16,
+};
+
+pub const SwfFile = struct {
+    header: SwfHeader,
+    file_attributes: tags.FileAttributes,
+    background_color: tags.Color,
+    tags: []io.Tag,
 };
 
 pub fn main() !void {
@@ -187,22 +196,28 @@ pub fn read_swf_uncompressed(compression: Compression, version: u8, decompressed
     logger.debug(@src(), "FileAttributes: {}", .{ file_attribute_tag });
     logger.debug(@src(), "SetBackgroundColor: {}", .{ set_background_tag });
 
-    var tags:ArrayList(io.Tag) = ArrayList(io.Tag).init(allocator);
+    var tags_list:ArrayList(io.Tag) = ArrayList(io.Tag).init(allocator);
 
     // Read all the tags
     while (reader.position < reader.len()) {
         const tag = try reader.read_tag(allocator);
-        try tags.append(tag);
+        try tags_list.append(tag);
 
         if (tag == io.TagCode.End) {
             logger.debug(@src(), "End tag found, stopping {}", .{tag});
             break;
         }
-
-        logger.debug(@src(), "Read tag: {}", .{ tag });
     }
 
-    logger.debug(@src(), "Read {d} tags", .{ tags.items.len });
+    var swf_file = SwfFile{
+        .header = header,
+        .file_attributes = file_attribute_tag.FileAttributes,
+        .background_color = set_background_tag.SetBackgroundColor,
+        .tags = tags_list.items,
+    };
+
+    var renderer = Renderer.init(&swf_file);
+    try renderer.render();
 }
 
 

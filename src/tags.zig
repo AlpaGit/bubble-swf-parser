@@ -1019,6 +1019,7 @@ pub const Rectangle = struct {
             .y_max = self.y_max,
         };
     }
+
 };
 
 pub const TWIPS_PER_PIXEL: i32 = 20;
@@ -1026,8 +1027,8 @@ pub const TWIPS_PER_PIXEL: i32 = 20;
 pub const Twips = struct {
     value: i32,
 
-    pub fn to_pixels(self: Twips) f32 {
-        return f32(self.value) / TWIPS_PER_PIXEL;
+    pub fn to_pixels(self: Twips) i32 {
+        return @divExact(self.value, TWIPS_PER_PIXEL);
     }
 };
 
@@ -1212,34 +1213,34 @@ pub const FillStyle = union {
 pub const LineStyleFlags = struct {
     // First byte.
     // 1 << 0
-    PixelHinting: bool = false,
+    pixel_hinting: bool = false,
     // 1 << 1
-    NoVScale: bool = false,
+    no_v_scale: bool = false,
     // 1 << 2
-    NoHScale: bool = false,
+    no_h_scale: bool = false,
     // 1 << 3
-    HasFill: bool = false,
+    has_fill: bool = false,
     // 0b11 << 4
-    JoinStyle: u16 = 0,
+    join_style: u16 = 0,
     // 0b11 << 6
-    StartCapStyle: u16 = 0,
+    start_cap_style: u16 = 0,
 
     // Second byte.
     // 0b11 << 8
-    EndCapStyle: u16 = 0,
+    end_cap_style: u16 = 0,
     // 1 << 10
-    NoClose: bool = false,
+    no_close: bool = false,
 
     pub fn read_from_u16(flags: u16) LineStyleFlags {
         return LineStyleFlags{
-            .PixelHinting = flags & 1 << 0 != 0,
-            .NoVScale = flags & 1 << 1 != 0,
-            .NoHScale = flags & 1 << 2 != 0,
-            .HasFill = flags & 1 << 3 != 0,
-            .JoinStyle = flags & 0b11 << 4,
-            .StartCapStyle = flags & 0b11 << 6,
-            .EndCapStyle = flags & 0b11 << 8,
-            .NoClose = flags & 1 << 10 != 0,
+            .pixel_hinting = flags & 1 << 0 != 0,
+            .no_v_scale = flags & 1 << 1 != 0,
+            .no_h_scale = flags & 1 << 2 != 0,
+            .has_fill = flags & 1 << 3 != 0,
+            .join_style = flags & 0b11 << 4,
+            .start_cap_style = flags & 0b11 << 6,
+            .end_cap_style = flags & 0b11 << 8,
+            .no_close = flags & 1 << 10 != 0,
         };
     }
 };
@@ -1269,25 +1270,25 @@ pub const LineStyle = struct {
             var flags = LineStyleFlags.read_from_u16(try reader.read_u16());
 
             // Verify valid cap and join styles.
-            if(flags.JoinStyle != 0){
+            if(flags.join_style != 0){
                 std.log.warn("Invalid line join style", .{});
-                flags.JoinStyle = 0;
+                flags.join_style = 0;
             }
 
-            if(flags.StartCapStyle != 0){
+            if(flags.start_cap_style != 0){
                 std.log.warn("Invalid line start cap style", .{});
-                flags.StartCapStyle = 0;
+                flags.start_cap_style = 0;
             }
 
-            if(flags.EndCapStyle != 0){
+            if(flags.end_cap_style != 0){
                 std.log.warn("Invalid line end cap style", .{});
-                flags.EndCapStyle = 0;
+                flags.end_cap_style = 0;
             }
 
-            const miter_limit:Fixed8 = if(flags.JoinStyle & 0b10 << 4 != 0) try reader.read_fixed8() else 0;
+            const miter_limit:Fixed8 = if(flags.join_style & 0b10 << 4 != 0) try reader.read_fixed8() else 0;
             var fill_style:FillStyle = undefined;
 
-            if(flags.HasFill)
+            if(flags.has_fill)
                 fill_style = try FillStyle.read(reader, allocator, version, swf_version)
             else
                 fill_style = FillStyle {
