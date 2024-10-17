@@ -1030,6 +1030,10 @@ pub const Twips = struct {
     pub fn to_pixels(self: Twips) i32 {
         return @divExact(self.value, TWIPS_PER_PIXEL);
     }
+
+    pub fn to_pixels_f32(self: Twips) f32 {
+        return @divExact(@as(f32, @floatFromInt(self.value)),  @as(f32, @floatFromInt(TWIPS_PER_PIXEL)));
+    }
 };
 
 pub const GradientFlags = struct {
@@ -1421,7 +1425,7 @@ pub const ShapeRecordFlags = struct {
 };
 
 
-pub const ShapeRecord = union {
+pub const ShapeRecord = union(enum) {
     StyleChange: StyleChangeData,
     StraightEdge: StraightEdge,
     CurvedEdge: CurvedEdge,
@@ -1570,7 +1574,6 @@ pub const DefineShape = struct {
     flags: ShapeFlags,
     styles: ShapeStyles,
     shapes: []ShapeRecord,
-
 
     pub fn read(reader: *LittleEndianReader, allocator: std.mem.Allocator, version: u8, swf_version: u8) !DefineShape {
         const id = try reader.read_u16();

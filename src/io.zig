@@ -56,6 +56,10 @@ pub const LittleEndianReader = struct {
         };
     }
 
+    pub fn seek(self: *LittleEndianReader, position: usize) void {
+        self.position = position;
+    }
+
     pub fn eof(self: *LittleEndianReader) bool {
         return self.position >= self.buffer.len;
     }

@@ -1,0 +1,113 @@
+{
+	"screen_width": 640,
+	"screen_height": 480,
+	"swf_objects": {
+		"0": {
+			"FrameContainer": {
+				"type": "main",
+				"frame_count": 1,
+				"id": 0,
+				"timeline": [
+					{
+						"type": "frame",
+						"display_list": {
+							"2": 2,
+							"1": 3
+						}
+					},
+					{
+						"type": "frame",
+						"display_list": {}
+					}
+				]
+			}
+		},
+		"3": {
+			"Shape": {
+				"type": "shape",
+				"id": 3,
+				"bounds": {
+					"x_min": {
+						"value": 3982
+					},
+					"x_max": {
+						"value": 8204
+					},
+					"y_min": {
+						"value": 716
+					},
+					"y_max": {
+						"value": 4923
+					}
+				},
+				"stroke_rect": {
+					"x_min": {
+						"value": 3992
+					},
+					"x_max": {
+						"value": 8194
+					},
+					"y_min": {
+						"value": 726
+					},
+					"y_max": {
+						"value": 4913
+					}
+				}
+			}
+		},
+		"2": {
+			"FrameContainer": {
+				"type": "sprite",
+				"frame_count": 1,
+				"id": 2,
+				"timeline": [
+					{
+						"type": "frame",
+						"display_list": {
+							"1": 1
+						}
+					},
+					{
+						"type": "frame",
+						"display_list": {}
+					}
+				]
+			}
+		},
+		"1": {
+			"Shape": {
+				"type": "shape",
+				"id": 1,
+				"bounds": {
+					"x_min": {
+						"value": -3594
+					},
+					"x_max": {
+						"value": 137738
+					},
+					"y_min": {
+						"value": 4598
+					},
+					"y_max": {
+						"value": 209418
+					}
+				},
+				"stroke_rect": {
+					"x_min": {
+						"value": -3584
+					},
+					"x_max": {
+						"value": 137728
+					},
+					"y_min": {
+						"value": 4608
+					},
+					"y_max": {
+						"value": 209408
+					}
+				}
+			}
+		}
+	}
+}

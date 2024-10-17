@@ -5,8 +5,10 @@
 	"timeline": [
 		{
 			"type": "frame",
-			"frame_count": 0,
-			"id": 0,
+			"display_list": {}
+		},
+		{
+			"type": "frame",
 			"display_list": {}
 		}
 	]
