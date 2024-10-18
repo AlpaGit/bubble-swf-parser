@@ -113,8 +113,14 @@ pub const TagCode = enum(u32) {
 
 pub fn Point(comptime T: type) type {
     return struct {
+        const Self = @This();
+
         x: T,
         y: T,
+
+        pub fn debug(self: Self) void {
+            @import("std").debug.print("{s}({d}, {d})\n", .{ @typeName(T), self.x, self.y });
+        }
     };
 }
 
@@ -130,6 +136,10 @@ pub const Color = struct {
     g: u8,
     b: u8,
     a: u8,
+
+    pub fn to_hex(self: Color) u32 {
+        return (@as(u32, self.a) << 24) | (@as(u32, self.r) << 16) | (@as(u32, self.g) << 8) | @as(u32, self.b);
+    }
 
     pub fn read_no_alpha(reader: *LittleEndianReader) !Color {
         return Color {
@@ -157,6 +167,8 @@ pub const Color = struct {
             .a = 0xFF,
         };
     }
+
+
 };
 
 // ColorTransform
@@ -1029,6 +1041,10 @@ pub const Twips = struct {
 
     pub fn to_pixels(self: Twips) i32 {
         return @divExact(self.value, TWIPS_PER_PIXEL);
+    }
+
+    pub fn to_pixels_u32(self: Twips) u32 {
+        return @intCast(self.to_pixels());
     }
 
     pub fn to_pixels_f32(self: Twips) f32 {

@@ -1,6 +1,8 @@
 {
-	"screen_width": 640,
-	"screen_height": 480,
+	"screen_size": {
+		"x": 640,
+		"y": 480
+	},
 	"swf_objects": {
 		"0": {
 			"FrameContainer": {
