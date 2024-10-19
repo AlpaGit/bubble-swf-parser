@@ -1156,7 +1156,7 @@ pub const BitmapFill = struct {
     }
 };
 
-pub const FillStyle = union {
+pub const FillStyle = union(enum) {
     Color: Color,
     LinearGradient: Gradient,
     RadialGradient: Gradient,

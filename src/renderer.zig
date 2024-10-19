@@ -360,7 +360,6 @@ pub const Renderer = struct {
             .context_version_minor = gl.info.version_minor,
             .opengl_profile = .opengl_core_profile,
             .opengl_forward_compat = true,
-            .resizable = false
         }) orelse return error.InitFailed;
         defer window.destroy();
 
@@ -434,17 +433,13 @@ pub const Renderer = struct {
             skia.sk_canvas_clear(canvas, 0xffffffff);
             const fill = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
             defer skia.sk_paint_delete(fill);
-            const color =  self.swf_file.background_color.to_hex();
+            //const color =  self.swf_file.background_color.to_hex();
+            const color = 0xFFB1DDFF;
 
             skia.sk_paint_set_color(fill, color);
             skia.sk_canvas_draw_paint(canvas, fill);
 
-
             try self.render_shape(canvas, self.curr_shape_rendering.?);
-            // lets render the shape !
-            //if (self.curr_shape_rendering == null) {
-            //    continue;
-            //}
 
             skia.sk_canvas_flush(canvas);
         }
@@ -478,80 +473,177 @@ pub const Renderer = struct {
         return Point(f32){ .x = x, .y =  y };
     }
 
-    fn render_points(self: *Renderer, canvas: *skia.sk_canvas_t, bounds: Rectangle,  points: []Point(f32), color: Color) !void {
-        logger.debug(@src(), "Drawing points: {}", .{points.len});
-
-        const path = skia.sk_path_new() orelse return error.SkiaCreatePathFailed;
-        const fill = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
-        defer skia.sk_paint_delete(fill);
-        defer skia.sk_path_delete(path);
-
-        logger.debug(@src(), "Color: {}", .{color.to_hex()});
-        skia.sk_paint_set_color(fill, color.to_hex());
-
-        var real_coord = normalize(points[0], self.screen_size, bounds);
-
-        skia.sk_path_move_to(path,  real_coord.x, real_coord.y);
-
-        for(points) | point| {
-            real_coord = normalize(point, self.screen_size, bounds);
-
-            skia.sk_path_line_to(path, real_coord.x, real_coord.y);
-            //skia.sk_path_move_to(path, real_coord.x, real_coord.y);
-            logger.debug(@src(), "Drawing point: {d},{d}", .{real_coord.x, real_coord.y});
-        }
-
-        skia.sk_path_close(path);
-        skia.sk_canvas_draw_path(canvas, path, fill);
-    }
-
     fn render_shape(self: *Renderer, canvas: *skia.sk_canvas_t, shape: *Shape) !void {
         logger.debug(@src(), "Rendering shape", .{});
 
-        var points = std.ArrayList(Point(f32)).init(self.allocator);
+        var path = skia.sk_path_new() orelse return error.SkiaCreatePathFailed;
+        var fill = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
+        var stroke = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
+
+        skia.sk_paint_set_antialias(fill, true);
+        skia.sk_paint_set_antialias(stroke, true);
+
+        var is_in_point = false;
         var curr_point = Point(f32){ .x = 0, .y = 0 };
-        var curr_color = Color{ .r = 0, .g = 0, .b = 0, .a = 0 };
 
         for (shape.edges) |edge| {
             switch (edge) {
                 .StyleChange => {
-                    logger.debug(@src(), "StyleChange", .{});
-
                     if(edge.StyleChange.move_to != null) {
-                        curr_point = Point(f32){
-                            .x = edge.StyleChange.move_to.?.x.to_pixels_f32(),
-                            .y = edge.StyleChange.move_to.?.y.to_pixels_f32()
-                        };
+                        if(is_in_point){
+                            logger.debug(@src(), "Rendering Time ! (new shape)", .{});
+                            logger.info(@src(), "Closing path {}", .{path});
 
-                        // we draw the last points
-                        if (points.items.len > 0) {
-                            try self.render_points(canvas, shape.bounds, points.items, curr_color);
-                            points.clearAndFree();
+                            skia.sk_path_close(path);
+                            skia.sk_canvas_draw_path(canvas, path, fill);
+                            skia.sk_canvas_draw_path(canvas, path, stroke);
                         }
+                        else {
+                            is_in_point = true;
+                        }
+
+                        skia.sk_path_close(path);
+                        skia.sk_path_delete(path);
+
+                        path = skia.sk_path_new() orelse return error.SkiaCreatePathFailed;
+
+                        curr_point.x = edge.StyleChange.move_to.?.x.to_pixels_f32();
+                        curr_point.y = edge.StyleChange.move_to.?.y.to_pixels_f32();
+
+                        const real_coord = normalize(curr_point, self.screen_size, shape.bounds);
+
+                        logger.debug(@src(), "StyleChange {d},{d} ({d}, {d}) ({d},{d})", .{
+                            @round(real_coord.x),  @round(real_coord.y),
+                            edge.StyleChange.move_to.?.x.value, edge.StyleChange.move_to.?.y.value,
+                            @round(curr_point.x), @round(curr_point.y),
+                        });
+
+                        skia.sk_path_move_to(path, real_coord.x, real_coord.y);
+                    }
+                    if(edge.StyleChange.fill_style_1 != null or edge.StyleChange.line_style != null) {
+                        fill = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
+                        stroke = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
+                        skia.sk_paint_set_antialias(fill, true);
+                        skia.sk_paint_set_antialias(stroke, true);
                     }
 
                     if(edge.StyleChange.fill_style_1 != null) {
                         const style = shape.styles.fill_styles[edge.StyleChange.fill_style_1.? - 1];
 
+                        switch(style){
+                            .Color => {
+                                skia.sk_paint_set_color(fill, style.Color.to_hex());
+                            },
+                            else => {},
+                        }
+
                         logger.debug(@src(), "StyleChange fill_style_1: {}", .{style.Color.to_hex()});
-                        curr_color = style.Color;
                     }
+
+                    if(edge.StyleChange.line_style != null) {
+                        const style = shape.styles.line_styles[edge.StyleChange.line_style.? - 1];
+
+                        const ROUND = 0b00 << 4;
+                        const BEVEL = 0b01 << 4;
+                        const MITER = 0b10 << 4;
+
+                        if(style.flags.start_cap_style != 0) {
+                            if(style.flags.start_cap_style & ROUND != 0) {
+                                skia.sk_paint_set_stroke_cap(stroke, skia.ROUND_SK_STROKE_CAP);
+                            }
+                            else if(style.flags.start_cap_style & BEVEL != 0) {
+                                skia.sk_paint_set_stroke_cap(stroke, skia.BEVEL_SK_STROKE_JOIN);
+                            }
+                            else if(style.flags.start_cap_style & MITER != 0) {
+                                skia.sk_paint_set_stroke_cap(stroke, skia.MITER_SK_STROKE_JOIN);
+                            }
+                        }
+                        else{
+                            skia.sk_paint_set_stroke_cap(stroke, skia.ROUND_SK_STROKE_CAP);
+                        }
+
+                        if(style.flags.join_style != 0) {
+                            if(style.flags.join_style & ROUND != 0) {
+                                skia.sk_paint_set_stroke_join(stroke, skia.ROUND_SK_STROKE_JOIN);
+                            }
+                            else if(style.flags.join_style & BEVEL != 0) {
+                                skia.sk_paint_set_stroke_join(stroke, skia.BEVEL_SK_STROKE_JOIN);
+                            }
+                            else if(style.flags.join_style & MITER != 0) {
+                                skia.sk_paint_set_stroke_join(stroke, skia.MITER_SK_STROKE_JOIN);
+                            }
+                        }
+                        else{
+                            skia.sk_paint_set_stroke_join(stroke, skia.ROUND_SK_STROKE_JOIN);
+                        }
+
+                        // In Flash, lines cannot look thinner than width of 1
+                        // Line width has to adjust to the transformation matrix
+                        const width = @max(1, style.width.to_pixels_f32() / 20);
+                        skia.sk_paint_set_stroke_width(stroke, width);
+                        skia.sk_paint_set_style(stroke, skia.STROKE_SK_PAINT_STYLE);
+
+                        switch (style.fill_style) {
+                            .Color => {
+                                skia.sk_paint_set_color(stroke, style.fill_style.Color.to_hex());
+                            },
+                            else => {},
+                        }
+
+                        logger.debug(@src(), "StyleChange line_style: {}", .{style});
+                    }
+
                 },
                 .CurvedEdge => {
-                    //logger.debug(@src(), "CurvedEdge", .{});
+                    curr_point.x += edge.CurvedEdge.control_delta.dx.to_pixels_f32();
+                    curr_point.y += edge.CurvedEdge.control_delta.dy.to_pixels_f32();
+
+                    const real_coord1 = normalize(curr_point, self.screen_size, shape.bounds);
+
+                    curr_point.x += edge.CurvedEdge.anchor_delta.dx.to_pixels_f32();
+                    curr_point.y += edge.CurvedEdge.anchor_delta.dy.to_pixels_f32();
+
+                    const real_coord2 = normalize(curr_point, self.screen_size, shape.bounds);
+
+                    logger.debug(@src(), "CurvedEdge: {d},{d} ({d},{d}) ({d}, {d})", .{
+                        @round(real_coord2.x),  @round(real_coord2.y),
+                        edge.CurvedEdge.anchor_delta.dx.value, edge.CurvedEdge.anchor_delta.dy.value,
+                        @round(curr_point.x), @round(curr_point.y),
+                    });
+
+
+                    skia.sk_path_quad_to(path,  real_coord1.x, real_coord1.y, real_coord2.x, real_coord2.y);
                 },
                 .StraightEdge => {
-                    curr_point = Point(f32){
-                        .x = curr_point.x + edge.StraightEdge.delta.dx.to_pixels_f32(),
-                        .y = curr_point.y + edge.StraightEdge.delta.dy.to_pixels_f32(),
-                    };
-                    logger.debug(@src(), "StraightEdge {d},{d}", .{edge.StraightEdge.delta.dx.value, edge.StraightEdge.delta.dy.value});
+                    curr_point.x += edge.StraightEdge.delta.dx.to_pixels_f32();
+                    curr_point.y += edge.StraightEdge.delta.dy.to_pixels_f32();
 
-                    try points.append(curr_point);
+                    const real_coord = normalize(curr_point, self.screen_size, shape.bounds);
+
+                    logger.debug(@src(), "StraightEdge: {d},{d} ({d},{d}) ({d}, {d})", .{
+                        @round(real_coord.x),  @round(real_coord.y),
+                        edge.StraightEdge.delta.dx.value, edge.StraightEdge.delta.dy.value,
+                        @round(curr_point.x), @round(curr_point.y),
+                    });
+                    skia.sk_path_line_to(path, real_coord.x, real_coord.y);
                 },
             }
         }
 
-        try self.render_points(canvas, shape.bounds, points.items, curr_color);
+        logger.debug(@src(), "Rendering Time ! (end of scope)", .{});
+        logger.info(@src(), "Closing path {}", .{path});
+        skia.sk_path_close(path);
+
+        logger.info(@src(), "Drawing path {}", .{path});
+        skia.sk_canvas_draw_path(canvas, path, fill);
+        skia.sk_canvas_draw_path(canvas, path, stroke);
+
+        logger.info(@src(), "Deleting paint {}", .{fill});
+        logger.info(@src(), "Deleting path {}", .{path});
+
+        skia.sk_path_delete(path);
+        skia.sk_paint_delete(fill);
+
+
     }
 };
