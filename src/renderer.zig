@@ -121,7 +121,9 @@ pub const FrameContainer = struct {
 
 pub const Renderer = struct {
     swf_file: *SwfFile,
+    last_screen_size: Point(u32),
     screen_size: Point(u32),
+    last_canvas: ?*skia.sk_canvas_t,
     swf_objects: std.AutoHashMap(u16, *SwfObject),
     curr_shape_rendering: ?*Shape,
 
@@ -130,13 +132,18 @@ pub const Renderer = struct {
     pub fn init(swf_file: *SwfFile, allocator: std.mem.Allocator) Renderer {
         return Renderer{
             .swf_file = swf_file,
+            .last_screen_size = Point(u32) {
+                .x = 0,
+                .y = 0,
+            },
             .screen_size = Point(u32) {
-                .x = swf_file.header.stage_size.x_max.to_pixels_u32() - swf_file.header.stage_size.x_min.to_pixels_u32(),
-                .y = swf_file.header.stage_size.y_max.to_pixels_u32() - swf_file.header.stage_size.y_min.to_pixels_u32(),
+                .x = 1280, // swf_file.header.stage_size.x_max.to_pixels_u32() - swf_file.header.stage_size.x_min.to_pixels_u32(),
+                .y = 720, // swf_file.header.stage_size.y_max.to_pixels_u32() - swf_file.header.stage_size.y_min.to_pixels_u32(),
             },
             .swf_objects = std.AutoHashMap(u16, *SwfObject).init(allocator),
             .curr_shape_rendering = null,
             .allocator = allocator,
+            .last_canvas = null,
         };
     }
 
@@ -367,7 +374,7 @@ pub const Renderer = struct {
         defer glfw.makeContextCurrent(null);
 
         // Enable VSync to avoid drawing more often than necessary.
-        glfw.swapInterval(1);
+        //glfw.swapInterval(1);
 
         // Initialize the OpenGL procedure table.
         if (!gl_procs.init(glfw.getProcAddress)) return error.InitFailed;
@@ -387,32 +394,56 @@ pub const Renderer = struct {
             .fFormat = gl.RGBA8,
         };
 
-        const rendertarget = skia.gr_backendrendertarget_new_gl(
-            @intCast(width),
-            @intCast(height),
-            0,
-            0,
-            &gl_info,
-        );
-
-        const color_type = skia.RGBA_8888_SK_COLORTYPE;
-        const colorspace = null;
-        const props = null;
-
-        const surface = skia.sk_surface_new_backend_render_target(
-            @ptrCast(gr_context),
-            rendertarget,
-            1,
-            color_type,
-            colorspace,
-            props,
-        ) orelse return error.SkiaCreateSurfaceFailed;
-        defer skia.sk_surface_unref(surface);
-
-        const canvas = skia.sk_surface_get_canvas(surface) orelse unreachable;
+        // create deltat time
+        var last_time = glfw.getTime();
 
         while (!window.shouldClose()) {
-            try self.draw(window, canvas);
+            const w_size = window.getSize();
+
+            if(self.last_screen_size.x == self.screen_size.x and self.last_screen_size.y == self.screen_size.y and self.last_canvas != null) {
+                //try self.draw(window, self.last_canvas.?);
+                //continue;
+            }
+
+            self.screen_size = Point(u32) {
+                .x = w_size.width,
+                .y = w_size.height,
+            };
+
+            self.last_screen_size = self.screen_size;
+
+            const rendertarget = skia.gr_backendrendertarget_new_gl(
+                @intCast(self.screen_size.x),
+                @intCast(self.screen_size.y),
+                0,
+                0,
+                &gl_info,
+            );
+
+            const color_type = skia.RGBA_8888_SK_COLORTYPE;
+            const colorspace = null;
+            const props = null;
+
+            const surface = skia.sk_surface_new_backend_render_target(
+                @ptrCast(gr_context),
+                rendertarget,
+                1,
+                color_type,
+                colorspace,
+                props,
+            ) orelse return error.SkiaCreateSurfaceFailed;
+            defer skia.sk_surface_unref(surface);
+
+            const canvas = skia.sk_surface_get_canvas(surface) orelse unreachable;
+            self.last_canvas = canvas;
+
+            //logger.debug(@src(), "Recreating canvas with size {} {}", .{self.screen_size, canvas});
+
+            const time = glfw.getTime();
+            const delta_time = time - last_time;
+            last_time = time;
+
+            try self.draw(window, canvas, delta_time);
         }
 
         glfw.terminate();
@@ -426,9 +457,11 @@ pub const Renderer = struct {
         logger.info(@src(), "Rendering SWF file", .{});
     }
 
-    fn draw(self: *Renderer, window: glfw.Window, canvas: *skia.sk_canvas_t) !void {
+
+    fn draw(self: *Renderer, window: glfw.Window, canvas: *skia.sk_canvas_t, delta_time: f64) !void {
         glfw.pollEvents();
 
+        //logger.debug(@src(), "Drawing frame on canvas {}", .{canvas});
         {
             skia.sk_canvas_clear(canvas, 0xffffffff);
             const fill = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
@@ -439,17 +472,26 @@ pub const Renderer = struct {
             skia.sk_paint_set_color(fill, color);
             skia.sk_canvas_draw_paint(canvas, fill);
 
+            const rect = skia.sk_rect_t {
+                .left = 10,
+                .top = 10,
+                .right = 20,
+                .bottom = 20,
+            };
+
+            const fill_c = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
+            defer skia.sk_paint_delete(fill_c);
+            
+
+            const color_f =  self.swf_file.background_color.to_hex();
+            skia.sk_paint_set_color(fill_c, color_f);
+            skia.sk_canvas_draw_rect(canvas, &rect, fill_c);
+
             try self.render_shape(canvas, self.curr_shape_rendering.?);
 
             skia.sk_canvas_flush(canvas);
         }
 
-        const w_size = window.getSize();
-
-        self.screen_size = Point(u32) {
-            .x = w_size.width,
-            .y = w_size.height,
-        };
         window.swapBuffers();
     }
 
@@ -459,6 +501,7 @@ pub const Renderer = struct {
 
         const ratio_x:f32 = @as(f32, @floatFromInt(window.x)) / bound_x_total;
         const ratio_y:f32 = @as(f32, @floatFromInt(window.y)) / bound_y_total;
+
 
         // we get the smaller value and use ratio
         const ratio = if(ratio_x < ratio_y)  ratio_x else ratio_y;
@@ -474,7 +517,7 @@ pub const Renderer = struct {
     }
 
     fn render_shape(self: *Renderer, canvas: *skia.sk_canvas_t, shape: *Shape) !void {
-        logger.debug(@src(), "Rendering shape", .{});
+        //logger.debug(@src(), "Rendering shape", .{});
 
         var path = skia.sk_path_new() orelse return error.SkiaCreatePathFailed;
         var fill = skia.sk_paint_new() orelse return error.SkiaCreatePaintFailed;
@@ -491,8 +534,8 @@ pub const Renderer = struct {
                 .StyleChange => {
                     if(edge.StyleChange.move_to != null) {
                         if(is_in_point){
-                            logger.debug(@src(), "Rendering Time ! (new shape)", .{});
-                            logger.info(@src(), "Closing path {}", .{path});
+                            //logger.debug(@src(), "Rendering Time ! (new shape)", .{});
+                            //logger.debug(@src(), "Closing path {}", .{path});
 
                             skia.sk_path_close(path);
                             skia.sk_canvas_draw_path(canvas, path, fill);
@@ -512,11 +555,11 @@ pub const Renderer = struct {
 
                         const real_coord = normalize(curr_point, self.screen_size, shape.bounds);
 
-                        logger.debug(@src(), "StyleChange {d},{d} ({d}, {d}) ({d},{d})", .{
-                            @round(real_coord.x),  @round(real_coord.y),
-                            edge.StyleChange.move_to.?.x.value, edge.StyleChange.move_to.?.y.value,
-                            @round(curr_point.x), @round(curr_point.y),
-                        });
+                        //logger.debug(@src(), "StyleChange {d},{d} ({d}, {d}) ({d},{d})", .{
+                        //    @round(real_coord.x),  @round(real_coord.y),
+                        //    edge.StyleChange.move_to.?.x.value, edge.StyleChange.move_to.?.y.value,
+                        //     @round(curr_point.x), @round(curr_point.y),
+                        //});
 
                         skia.sk_path_move_to(path, real_coord.x, real_coord.y);
                     }
@@ -537,7 +580,7 @@ pub const Renderer = struct {
                             else => {},
                         }
 
-                        logger.debug(@src(), "StyleChange fill_style_1: {}", .{style.Color.to_hex()});
+                        //logger.debug(@src(), "StyleChange fill_style_1: {}", .{style.Color.to_hex()});
                     }
 
                     if(edge.StyleChange.line_style != null) {
@@ -590,7 +633,7 @@ pub const Renderer = struct {
                             else => {},
                         }
 
-                        logger.debug(@src(), "StyleChange line_style: {}", .{style});
+                        //logger.debug(@src(), "StyleChange line_style: {}", .{style});
                     }
 
                 },
@@ -605,11 +648,11 @@ pub const Renderer = struct {
 
                     const real_coord2 = normalize(curr_point, self.screen_size, shape.bounds);
 
-                    logger.debug(@src(), "CurvedEdge: {d},{d} ({d},{d}) ({d}, {d})", .{
-                        @round(real_coord2.x),  @round(real_coord2.y),
-                        edge.CurvedEdge.anchor_delta.dx.value, edge.CurvedEdge.anchor_delta.dy.value,
-                        @round(curr_point.x), @round(curr_point.y),
-                    });
+                    //logger.debug(@src(), "CurvedEdge: {d},{d} ({d},{d}) ({d}, {d})", .{
+                    //    @round(real_coord2.x),  @round(real_coord2.y),
+                    //    edge.CurvedEdge.anchor_delta.dx.value, edge.CurvedEdge.anchor_delta.dy.value,
+                    //     @round(curr_point.x), @round(curr_point.y),
+                    // });
 
 
                     skia.sk_path_quad_to(path,  real_coord1.x, real_coord1.y, real_coord2.x, real_coord2.y);
@@ -620,26 +663,26 @@ pub const Renderer = struct {
 
                     const real_coord = normalize(curr_point, self.screen_size, shape.bounds);
 
-                    logger.debug(@src(), "StraightEdge: {d},{d} ({d},{d}) ({d}, {d})", .{
-                        @round(real_coord.x),  @round(real_coord.y),
-                        edge.StraightEdge.delta.dx.value, edge.StraightEdge.delta.dy.value,
-                        @round(curr_point.x), @round(curr_point.y),
-                    });
+                    //logger.debug(@src(), "StraightEdge: {d},{d} ({d},{d}) ({d}, {d})", .{
+                    //    @round(real_coord.x),  @round(real_coord.y),
+                    //    edge.StraightEdge.delta.dx.value, edge.StraightEdge.delta.dy.value,
+                    //    @round(curr_point.x), @round(curr_point.y),
+                    //});
                     skia.sk_path_line_to(path, real_coord.x, real_coord.y);
                 },
             }
         }
 
-        logger.debug(@src(), "Rendering Time ! (end of scope)", .{});
-        logger.info(@src(), "Closing path {}", .{path});
+        //logger.debug(@src(), "Rendering Time ! (end of scope)", .{});
+        //logger.info(@src(), "Closing path {}", .{path});
         skia.sk_path_close(path);
 
-        logger.info(@src(), "Drawing path {}", .{path});
+        //logger.info(@src(), "Drawing path {}", .{path});
         skia.sk_canvas_draw_path(canvas, path, fill);
         skia.sk_canvas_draw_path(canvas, path, stroke);
 
-        logger.info(@src(), "Deleting paint {}", .{fill});
-        logger.info(@src(), "Deleting path {}", .{path});
+        //logger.info(@src(), "Deleting paint {}", .{fill});
+        //logger.info(@src(), "Deleting path {}", .{path});
 
         skia.sk_path_delete(path);
         skia.sk_paint_delete(fill);
